@@ -1,0 +1,38 @@
+# ============================================
+# DeepTutor Standalone - Minimal Requirements
+# ============================================
+
+# Core
+python-dotenv>=1.0.0
+PyYAML>=6.0
+tiktoken>=0.5.0
+jinja2>=3.1.0
+numpy>=1.24.0,<2.0.0
+
+# API & Networking
+fastapi>=0.100.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+requests>=2.32.2
+httpx>=0.27.0
+aiohttp>=3.9.4
+urllib3>=2.2.1
+
+# AI & LLM
+openai>=1.30.0
+anthropic>=0.30.0
+# tenacity & joblib are used by retry logic / cache
+tenacity>=8.0.0
+joblib>=1.3.0
+# New flexible LLM SDK
+litellm>=1.0.0
+google-generativeai>=0.3.0
+
+# Storage
+minio>=7.2.0
+
+# Note: Removed heavy/conflicting libraries (raganything, lightrag-hku, llama-index, arxiv, etc.)
+# which are not strictly needed for the initial Co-Writer standalone functionality.
+# They can be added back one by one if RAG features are specifically requested.
