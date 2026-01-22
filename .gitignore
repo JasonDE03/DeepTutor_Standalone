@@ -51,9 +51,17 @@ Thumbs.db
 # Logs
 *.log
 logs/
+backend/logs/
+
+# Data & Runtime
+backend/data/
+frontend/out/
 
 # Temporary files
 *.tmp
 *.bak
 *.swp
 .cache/
+.pytest_cache/
+.coverage
+htmlcov/
