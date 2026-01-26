@@ -48,6 +48,22 @@ class SaveFileRequest(BaseModel):
     content: str
 
 
+class FileVersion(BaseModel):
+    """File version metadata"""
+    version_id: str
+    last_modified: str
+    size: int
+    is_latest: bool
+    is_delete_marker: bool
+
+
+class FileVersionsResponse(BaseModel):
+    """Response for file versions listing"""
+    versions: List[FileVersion]
+    total: int
+
+
+
 class SaveFileResponse(BaseModel):
     """Response after saving file"""
     success: bool
@@ -134,6 +150,95 @@ async def list_files(
     except Exception as e:
         logger.error(f"Failed to list files in {bucket}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to list files: {str(e)}")
+
+
+@router.get("/{bucket}/{path:path}/versions", response_model=FileVersionsResponse)
+async def list_file_versions(bucket: str, path: str):
+    """
+    List all versions of a file.
+    
+    Parameters:
+    ----------
+    bucket : str
+        Bucket name
+    path : str
+        File path in bucket
+    
+    Returns:
+    -------
+        FileVersionsResponse with list of versions
+    """
+    try:
+        minio = get_minio_service()
+        
+        # Get versions
+        versions_data = minio.list_file_versions(bucket, path)
+        
+        # Convert to response model
+        versions = [
+            FileVersion(
+                version_id=v["version_id"],
+                last_modified=v["last_modified"],
+                size=v["size"],
+                is_latest=v["is_latest"],
+                is_delete_marker=v["is_delete_marker"]
+            )
+            for v in versions_data
+        ]
+        
+        return FileVersionsResponse(versions=versions, total=len(versions))
+        
+    except Exception as e:
+        logger.error(f"Failed to list versions for {bucket}/{path}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list versions: {str(e)}")
+
+
+@router.get("/{bucket}/{path:path}/versions/{version_id}", response_model=FileContentResponse)
+async def get_file_version(bucket: str, path: str, version_id: str):
+    """
+    Get specific version of a file.
+    
+    Parameters:
+    ----------
+    bucket : str
+        Bucket name
+    path : str
+        File path in bucket
+    version_id : str
+        Version ID to retrieve
+    
+    Returns:
+    -------
+        FileContentResponse with version content and metadata
+    """
+    try:
+        minio = get_minio_service()
+        
+        # Read version content
+        content = minio.get_file_version(bucket, path, version_id)
+        
+        # Get version metadata from versions list
+        versions_data = minio.list_file_versions(bucket, path)
+        version_info = next((v for v in versions_data if v["version_id"] == version_id), None)
+        
+        if not version_info:
+            raise HTTPException(status_code=404, detail=f"Version not found: {version_id}")
+        
+        metadata = FileMetadata(
+            name=path,
+            size=version_info["size"],
+            last_modified=version_info["last_modified"],
+            content_type="",  # MinIO doesn't track content type per version
+            is_dir=False
+        )
+        
+        return FileContentResponse(content=content, metadata=metadata)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get version {version_id} for {bucket}/{path}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get version: {str(e)}")
 
 
 @router.get("/{bucket}/{path:path}", response_model=FileContentResponse)

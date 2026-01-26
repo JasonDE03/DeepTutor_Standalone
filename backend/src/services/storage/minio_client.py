@@ -208,6 +208,73 @@ class MinIOService:
             logger.error(f"Failed to read file {bucket}/{path}: {e}")
             raise
     
+    def list_file_versions(self, bucket: str, path: str) -> List[dict]:
+        """
+        List all versions of a file.
+        
+        Args:
+            bucket: Bucket name
+            path: File path in bucket
+        
+        Returns:
+            List of version info dicts with keys: version_id, last_modified, size, is_latest
+        """
+        try:
+            versions = []
+            # List objects with versions enabled
+            objects = self.client.list_objects(
+                bucket, 
+                prefix=path,
+                include_version=True
+            )
+            
+            for obj in objects:
+                if obj.object_name == path:  # Exact match only
+                    versions.append({
+                        "version_id": obj.version_id,
+                        "last_modified": obj.last_modified.isoformat() if obj.last_modified else None,
+                        "size": obj.size,
+                        "is_latest": obj.is_latest if hasattr(obj, 'is_latest') else False,
+                        "is_delete_marker": obj.is_delete_marker if hasattr(obj, 'is_delete_marker') else False
+                    })
+            
+            logger.info(f"Found {len(versions)} versions for {bucket}/{path}")
+            return versions
+            
+        except S3Error as e:
+            logger.error(f"Failed to list versions for {bucket}/{path}: {e}")
+            raise
+    
+    def get_file_version(self, bucket: str, path: str, version_id: str) -> str:
+        """
+        Read specific version of a file.
+        
+        Args:
+            bucket: Bucket name
+            path: File path in bucket
+            version_id: Version ID to retrieve
+        
+        Returns:
+            File content as string for the specified version
+        """
+        try:
+            response = self.client.get_object(
+                bucket, 
+                path,
+                version_id=version_id
+            )
+            content = response.read().decode('utf-8')
+            response.close()
+            response.release_conn()
+            
+            logger.info(f"Read file {bucket}/{path} version {version_id} ({len(content)} bytes)")
+            return content
+            
+        except S3Error as e:
+            logger.error(f"Failed to read file {bucket}/{path} version {version_id}: {e}")
+            raise
+
+    
     def save_file(self, bucket: str, path: str, content: str) -> int:
         """
         Save file content.

@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Save, ArrowLeft, AlertCircle, CheckCircle } from 'lucide-react';
+import { Save, ArrowLeft, AlertCircle, CheckCircle, GitCompare } from 'lucide-react';
 import CoWriterEditor from '@/components/CoWriterEditor';
+import DiffViewerModal from '@/components/DiffViewerModal';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8001';
 
@@ -25,6 +26,9 @@ export default function FileEditorPage() {
   // JSON handling
   const [originalJson, setOriginalJson] = useState<any>(null);
   const [jsonKey, setJsonKey] = useState<string>('');
+  
+  // Diff viewer
+  const [showDiff, setShowDiff] = useState(false);
 
   useEffect(() => {
     if (path) {
@@ -230,6 +234,14 @@ export default function FileEditorPage() {
             )}
             
             <button
+              onClick={() => setShowDiff(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all bg-gray-100 hover:bg-gray-200 text-gray-700"
+            >
+              <GitCompare className="w-4 h-4" />
+              Compare Versions
+            </button>
+            
+            <button
               onClick={saveFile}
               disabled={saving || !isDirty}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
@@ -271,6 +283,15 @@ export default function FileEditorPage() {
           onChange={handleContentChange}
         />
       </div>
+      
+      {/* Diff Viewer Modal */}
+      <DiffViewerModal
+        bucket={bucket}
+        path={path}
+        currentContent={content}
+        isOpen={showDiff}
+        onClose={() => setShowDiff(false)}
+      />
     </div>
   );
 }
