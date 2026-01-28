@@ -1,16 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Save, ArrowLeft, AlertCircle, CheckCircle, GitCompare } from 'lucide-react';
+import { Save, ArrowLeft, AlertCircle, CheckCircle, GitCompare, Lock, LockOpen } from 'lucide-react';
 import CoWriterEditor from '@/components/CoWriterEditor';
 import DiffViewerModal from '@/components/DiffViewerModal';
+import { useAuth } from '@/contexts/AuthContext';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8001';
 
 export default function FileEditorPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user, token } = useAuth();
   
   const bucket = searchParams.get('bucket') || 'wonderpedia';
   const path = searchParams.get('path') || '';
@@ -30,14 +32,32 @@ export default function FileEditorPage() {
   // Diff viewer
   const [showDiff, setShowDiff] = useState(false);
 
+  // Locking
+  const [isLocked, setIsLocked] = useState(false);
+  const [lockOwner, setLockOwner] = useState<string | null>(null);
+  const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
-    if (path) {
+    if (path && user && token) {
       loadFile();
+      acquireLock();
     }
-  }, [path, bucket]);
+    
+    return () => {
+        if (heartbeatInterval.current) {
+            clearInterval(heartbeatInterval.current);
+        }
+        if (path && token) {
+             releaseLock();
+        }
+    };
+  }, [path, bucket, user, token]);
 
   // Handle content changes from CoWriterEditor
   const handleContentChange = (newContent: string) => {
+    // Prevent edits if locked by someone else
+    if (lockOwner && lockOwner !== user?.username) return;
+    
     setContent(newContent);
     setIsDirty(newContent !== originalContent);
   };
@@ -48,7 +68,11 @@ export default function FileEditorPage() {
     try {
       // Use encodeURI to handle spaces and special chars, but preserve slashes
       const safePath = path.split('/').map(encodeURIComponent).join('/');
-      const res = await fetch(`${API_BASE}/api/v1/files/${bucket}/${safePath}`);
+      const res = await fetch(`${API_BASE}/api/v1/files/${bucket}/${safePath}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
       if (!res.ok) {
         throw new Error(`Failed to load file: ${res.status} ${res.statusText}`);
       }
@@ -132,6 +156,7 @@ export default function FileEditorPage() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ content: contentToSave }),
       });
@@ -157,6 +182,68 @@ export default function FileEditorPage() {
       setError(err.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const acquireLock = async () => {
+    if (!path || !user) return;
+    
+    try {
+      const safePath = path.split('/').map(encodeURIComponent).join('/');
+      const res = await fetch(`${API_BASE}/api/v1/files/${bucket}/${safePath}/lock`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (res.status === 409) {
+          const data = await res.json();
+          setLockOwner(data.detail?.split(':')?.[1]?.trim() || 'unknown');
+          setIsLocked(true);
+          setError(`File is locked by another user`);
+      } else if (res.ok) {
+          setIsLocked(false);
+          setLockOwner(user.username);
+          // Start heartbeat
+          if (heartbeatInterval.current) clearInterval(heartbeatInterval.current);
+          heartbeatInterval.current = setInterval(sendHeartbeat, 30000); // 30s
+      }
+    } catch (e) {
+        console.error("Failed to acquire lock", e);
+    }
+  };
+
+  const releaseLock = async () => {
+    if (heartbeatInterval.current) {
+        clearInterval(heartbeatInterval.current);
+        heartbeatInterval.current = null;
+    }
+    if (!path || !user) return;
+    
+    try {
+      const safePath = path.split('/').map(encodeURIComponent).join('/');
+      await fetch(`${API_BASE}/api/v1/files/${bucket}/${safePath}/lock`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+    } catch (e) {
+        console.error("Failed to release lock", e);
+    }
+  };
+
+  const sendHeartbeat = async () => {
+    if (!path || !user) return;
+    try {
+      const safePath = path.split('/').map(encodeURIComponent).join('/');
+      const res = await fetch(`${API_BASE}/api/v1/files/${bucket}/${safePath}/lock/heartbeat`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) {
+           // Lost lock?
+           console.warn("Heartbeat failed, potentially lost lock");
+      }
+    } catch (e) {
+        console.error("Heartbeat error", e);
     }
   };
 
@@ -291,6 +378,7 @@ export default function FileEditorPage() {
         currentContent={content}
         isOpen={showDiff}
         onClose={() => setShowDiff(false)}
+        token={token}
       />
     </div>
   );
