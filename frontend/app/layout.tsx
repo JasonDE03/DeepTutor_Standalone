@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import ThemeScript from "@/components/ThemeScript";
+import { AuthProvider } from "@/contexts/AuthContext";
 
 const font = Inter({
   subsets: ["latin"],
@@ -27,7 +28,9 @@ export default function RootLayout({
       <body className={font.className} suppressHydrationWarning>
         <div className="flex h-screen bg-slate-50 dark:bg-slate-900 overflow-hidden transition-colors duration-200">
             <main className="flex-1 overflow-y-auto bg-slate-50 dark:bg-slate-900">
-            {children}
+            <AuthProvider>
+              {children}
+            </AuthProvider>
             </main>
         </div>
       </body>
