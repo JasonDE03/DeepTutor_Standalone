@@ -12,10 +12,12 @@
     "audit:report": "playwright show-report"
   },
   "dependencies": {
+    "casdoor-js-sdk": "^0.16.0",
     "clsx": "^2.1.1",
     "cytoscape": "^3.33.1",
     "framer-motion": "^12.24.0",
     "html2canvas": "^1.4.1",
+    "js-cookie": "^3.0.5",
     "jspdf": "^4.0.0",
     "lucide-react": "^0.562.0",
     "mermaid": "^11.12.2",
@@ -32,6 +34,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.53.2",
+    "@types/js-cookie": "^3.0.6",
     "@types/node": "^25",
     "@types/react": "^19",
     "@types/react-dom": "^19",
