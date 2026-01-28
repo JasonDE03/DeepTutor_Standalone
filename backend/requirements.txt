@@ -33,6 +33,11 @@ google-generativeai>=0.3.0
 # Storage
 minio>=7.2.0
 
+# Authentication & Locking
+casdoor==1.17.0
+python-jose[cryptography]==3.3.0
+redis==5.0.1
+
 # Note: Removed heavy/conflicting libraries (raganything, lightrag-hku, llama-index, arxiv, etc.)
 # which are not strictly needed for the initial Co-Writer standalone functionality.
 # They can be added back one by one if RAG features are specifically requested.
