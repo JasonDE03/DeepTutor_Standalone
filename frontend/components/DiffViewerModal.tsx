@@ -20,9 +20,10 @@ interface DiffViewerModalProps {
   currentContent: string;
   isOpen: boolean;
   onClose: () => void;
+  token: string | null;
 }
 
-export default function DiffViewerModal({ bucket, path, currentContent, isOpen, onClose }: DiffViewerModalProps) {
+export default function DiffViewerModal({ bucket, path, currentContent, isOpen, onClose, token }: DiffViewerModalProps) {
   const [versions, setVersions] = useState<FileVersion[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<string>('');
   const [versionContent, setVersionContent] = useState<string>('');
@@ -40,7 +41,11 @@ export default function DiffViewerModal({ bucket, path, currentContent, isOpen, 
     setError('');
     try {
       const safePath = path.split('/').map(encodeURIComponent).join('/');
-      const res = await fetch(`${API_BASE}/api/v1/files/${bucket}/${safePath}/versions`);
+      const res = await fetch(`${API_BASE}/api/v1/files/${bucket}/${safePath}/versions`, {
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+      });
       if (!res.ok) throw new Error('Failed to fetch versions');
       const data = await res.json();
       
@@ -68,7 +73,11 @@ export default function DiffViewerModal({ bucket, path, currentContent, isOpen, 
     setLoading(true);
     try {
       const safePath = path.split('/').map(encodeURIComponent).join('/');
-      const res = await fetch(`${API_BASE}/api/v1/files/${bucket}/${safePath}/versions/${versionId}`);
+      const res = await fetch(`${API_BASE}/api/v1/files/${bucket}/${safePath}/versions/${versionId}`, {
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+      });
       if (!res.ok) throw new Error('Failed to fetch version content');
       const data = await res.json();
       setVersionContent(data.content);
