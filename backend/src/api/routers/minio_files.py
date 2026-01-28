@@ -6,12 +6,15 @@ REST API endpoints for managing files in MinIO object storage.
 Provides file browser, search, read, and write operations.
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
 from typing import List, Optional
 import logging
 
 from src.services.storage import get_minio_service, FileInfo
+from src.middleware.auth import get_current_user
+from src.middleware.permissions import require_permission
+from src.dependencies import get_file_lock_manager
 
 logger = logging.getLogger("MinIOFilesRouter")
 
@@ -76,7 +79,7 @@ class SaveFileResponse(BaseModel):
 # ============================================================================
 
 @router.get("/buckets", response_model=dict)
-async def list_buckets():
+async def list_buckets(current_user: dict = Depends(get_current_user)):
     """
     List all available MinIO buckets.
     
@@ -99,7 +102,8 @@ async def list_files(
     prefix: str = Query("", description="Filter by prefix"),
     recursive: bool = Query(False, description="List recursively"),
     search: str = Query("", description="Search query for filenames"),
-    extensions: str = Query(".md,.markdown,.txt", description="Comma-separated file extensions")
+    extensions: str = Query(".md,.markdown,.txt", description="Comma-separated file extensions"),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     List files in a bucket.
@@ -153,7 +157,7 @@ async def list_files(
 
 
 @router.get("/{bucket}/{path:path}/versions", response_model=FileVersionsResponse)
-async def list_file_versions(bucket: str, path: str):
+async def list_file_versions(bucket: str, path: str, current_user: dict = Depends(get_current_user)):
     """
     List all versions of a file.
     
@@ -194,7 +198,7 @@ async def list_file_versions(bucket: str, path: str):
 
 
 @router.get("/{bucket}/{path:path}/versions/{version_id}", response_model=FileContentResponse)
-async def get_file_version(bucket: str, path: str, version_id: str):
+async def get_file_version(bucket: str, path: str, version_id: str, current_user: dict = Depends(get_current_user)):
     """
     Get specific version of a file.
     
@@ -242,7 +246,7 @@ async def get_file_version(bucket: str, path: str, version_id: str):
 
 
 @router.get("/{bucket}/{path:path}", response_model=FileContentResponse)
-async def get_file(bucket: str, path: str):
+async def get_file(bucket: str, path: str, current_user: dict = Depends(get_current_user)):
     """
     Read file content.
     
@@ -290,8 +294,61 @@ async def get_file(bucket: str, path: str):
         raise HTTPException(status_code=500, detail=f"Failed to read file: {str(e)}")
 
 
+# Lock Endpoints
+
+@router.post("/{bucket}/{path:path}/lock")
+async def acquire_file_lock(
+    bucket: str, 
+    path: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Acquire exclusive lock on file"""
+    manager = get_file_lock_manager()
+    success = manager.acquire_lock(f"{bucket}/{path}", current_user["id"])
+    if not success:
+        owner = manager.get_lock_owner(f"{bucket}/{path}")
+        if owner == current_user["id"]:
+             manager.extend_lock(f"{bucket}/{path}", current_user["id"])
+             return {"locked": True, "user": current_user["username"]}
+        raise HTTPException(status_code=409, detail=f"File locked by user: {owner}")
+    return {"locked": True, "user": current_user["username"]}
+
+@router.post("/{bucket}/{path:path}/lock/heartbeat")
+async def extend_file_lock(
+    bucket: str,
+    path: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Extend lock TTL"""
+    manager = get_file_lock_manager()
+    success = manager.extend_lock(f"{bucket}/{path}", current_user["id"], ttl=60)
+    if not success:
+         owner = manager.get_lock_owner(f"{bucket}/{path}")
+         if owner and owner != current_user["id"]:
+              raise HTTPException(status_code=409, detail=f"Lock owner changed to: {owner}")
+         raise HTTPException(status_code=409, detail="Lock lost or expired")
+    return {"status": "extended", "ttl": 60}
+
+@router.delete("/{bucket}/{path:path}/lock")
+async def release_file_lock(
+    bucket: str,
+    path: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Release file lock"""
+    manager = get_file_lock_manager()
+    manager.release_lock(f"{bucket}/{path}", current_user["id"])
+    return {"locked": False}
+
+
 @router.put("/{bucket}/{path:path}", response_model=SaveFileResponse)
-async def save_file(bucket: str, path: str, request: SaveFileRequest):
+@require_permission("write")
+async def save_file(
+    bucket: str, 
+    path: str, 
+    request: SaveFileRequest,
+    current_user: dict = Depends(get_current_user)
+):
     """
     Save file content.
     
@@ -309,6 +366,12 @@ async def save_file(bucket: str, path: str, request: SaveFileRequest):
         SaveFileResponse with success status and file size
     """
     try:
+        # Check lock
+        manager = get_file_lock_manager()
+        owner = manager.get_lock_owner(f"{bucket}/{path}")
+        if owner and owner != current_user["id"]:
+            raise HTTPException(status_code=409, detail=f"File is locked by another user: {owner}")
+
         minio = get_minio_service()
         
         # Save file
@@ -326,7 +389,8 @@ async def save_file(bucket: str, path: str, request: SaveFileRequest):
 
 
 @router.delete("/{bucket}/{path:path}", response_model=dict)
-async def delete_file(bucket: str, path: str):
+@require_permission("delete")
+async def delete_file(bucket: str, path: str, current_user: dict = Depends(get_current_user)):
     """
     Delete a file.
     
@@ -342,6 +406,12 @@ async def delete_file(bucket: str, path: str):
         {"success": true, "message": "..."}
     """
     try:
+        # Check lock before delete
+        manager = get_file_lock_manager()
+        owner = manager.get_lock_owner(f"{bucket}/{path}")
+        if owner and owner != current_user["id"]:
+             raise HTTPException(status_code=409, detail=f"File is locked by another user: {owner}")
+
         minio = get_minio_service()
         
         # Check if file exists
