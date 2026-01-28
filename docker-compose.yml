@@ -13,6 +13,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     command: python main.py
+    depends_on:
+      - redis
 
   frontend:
     build:
@@ -23,9 +25,50 @@ services:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_BASE=http://localhost:8001
+      - NEXT_PUBLIC_CASDOOR_URL=http://localhost:8000
+      - NEXT_PUBLIC_CASDOOR_CLIENT_ID=3887a34bc5539965d1f6
+      - NEXT_PUBLIC_CASDOOR_CLIENT_SECRET=e5d8fa7ddb4ba6d0e0f29ed899840898e4ab0ec6
     depends_on:
       - backend
     volumes:
       - ./frontend:/app
       - /app/node_modules
     command: npm run dev
+
+  casdoor:
+    image: casbin/casdoor:latest
+    container_name: deeptutor-casdoor
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./casdoor/conf:/conf
+    depends_on:
+      - casdoor-db
+    environment:
+      - RUNNING_IN_DOCKER=true
+      - driverName=postgres
+      - dataSourceName=user=casdoor password=casdoor_pass host=casdoor-db port=5432 sslmode=disable dbname=casdoor
+  
+  casdoor-db:
+    image: postgres:13-alpine
+    container_name: deeptutor-casdoor-db
+    environment:
+      - POSTGRES_USER=casdoor
+      - POSTGRES_PASSWORD=casdoor_pass
+      - POSTGRES_DB=casdoor
+    volumes:
+      - casdoor-db-data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+  
+  redis:
+    image: redis:7-alpine
+    container_name: deeptutor-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis-data:/data
+
+volumes:
+  casdoor-db-data:
+  redis-data:
