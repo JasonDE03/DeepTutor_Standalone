@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, FileText, Folder, Calendar, HardDrive } from 'lucide-react';
+import { Search, FileText, Folder, Calendar, HardDrive, LogOut } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8001';
 
@@ -16,6 +17,7 @@ interface FileMetadata {
 
 export default function FileBrowserPage() {
   const router = useRouter();
+  const { token, isAuthenticated, isLoading, logout, user } = useAuth();
   const [buckets, setBuckets] = useState<string[]>([]);
   const [selectedBucket, setSelectedBucket] = useState('');
   const [currentPath, setCurrentPath] = useState('');
@@ -24,10 +26,18 @@ export default function FileBrowserPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Load buckets on mount
+  // Load buckets on mount (wait for auth)
   useEffect(() => {
-    fetchBuckets();
-  }, []);
+    if (!isLoading) {
+      if (!isAuthenticated) {
+        router.push('/login');
+        return;
+      }
+      if (token) {
+        fetchBuckets();
+      }
+    }
+  }, [isAuthenticated, isLoading, token, router]);
 
   // Load files when bucket or path changes
   useEffect(() => {
@@ -37,8 +47,17 @@ export default function FileBrowserPage() {
   }, [selectedBucket, currentPath]);
 
   const fetchBuckets = async () => {
+    if (!token) return;
     try {
-      const res = await fetch(`${API_BASE}/api/v1/files/buckets`);
+      const res = await fetch(`${API_BASE}/api/v1/files/buckets`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (res.status === 401) {
+         logout();
+         return;
+      }
       if (!res.ok) throw new Error('Failed to fetch buckets');
       const data = await res.json();
       const bucketList = data.buckets || [];
@@ -64,7 +83,15 @@ export default function FileBrowserPage() {
         extensions: '.md,.markdown,.txt,.json'
       });
       
-      const res = await fetch(`${API_BASE}/api/v1/files/${selectedBucket}?${params}`);
+      const res = await fetch(`${API_BASE}/api/v1/files/${selectedBucket}?${params}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (res.status === 401) {
+         logout();
+         return;
+      }
       if (!res.ok) throw new Error('Failed to fetch files');
       
       const data = await res.json();
@@ -139,7 +166,20 @@ export default function FileBrowserPage() {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">📁 File Browser</h1>
+          <div className="flex justify-between items-center mb-2">
+            <h1 className="text-3xl font-bold text-gray-900">📁 File Browser</h1>
+            <div className="flex items-center gap-4">
+                <span className="text-sm text-gray-600">
+                    Welcome, <strong>{user?.username}</strong> ({user?.role})
+                </span>
+                <button 
+                    onClick={logout}
+                    className="flex items-center gap-2 px-3 py-1 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700"
+                >
+                    <LogOut className="w-4 h-4" /> Sign Out
+                </button>
+            </div>
+          </div>
           <p className="text-gray-600">Browse and edit markdown files from MinIO storage</p>
         </div>
 
